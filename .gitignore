@@ -14,3 +14,6 @@ Cargo.lock
 # Local temporary directories and repository-owned worktrees
 tmp/
 temp/
+
+# Machine-local agent instruction symlink (absolute path; never committed)
+.ores/
