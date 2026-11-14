@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use ores_clis_core::{CliPolicy, parse_shared_argv};
+use ores_clis_core::{parse_shared_argv, CliPolicy};
 
 use crate::error::CliError;
 
@@ -23,10 +23,10 @@ pub fn parse<I>(args: I) -> Result<Invocation, CliError>
 where
     I: IntoIterator<Item = String>,
 {
-    let shared = parse_shared_argv(args)
-        .map_err(|error| CliError::Usage(error.to_string()))?;
+    let shared = parse_shared_argv(args).map_err(|error| CliError::Usage(error.to_string()))?;
     let mut command = Command::Help;
     let mut api_base = None;
+    let output_was_explicit = shared.output_was_explicit();
     let mut items = shared.passthrough.into_iter().peekable();
     if let Some(first) = items.peek() {
         match first.as_str() {
@@ -52,7 +52,17 @@ where
         match arg.as_str() {
             "--help" | "-h" => command = Command::Help,
             flag if flag.starts_with("--api-base=") => {
-                api_base = Some(flag.trim_start_matches("--api-base=").to_string());
+                if api_base.is_some() {
+                    return Err(CliError::Usage("--api-base may appear only once".into()));
+                }
+                let value = flag.trim_start_matches("--api-base=");
+                if !valid_api_base(value) {
+                    return Err(CliError::Usage(
+                        "--api-base must be an http(s) URL without credentials, query, or fragment"
+                            .into(),
+                    ));
+                }
+                api_base = Some(value.to_string());
             }
             other => return Err(CliError::Usage(format!("unknown flag {other}"))),
         }
@@ -61,8 +71,61 @@ where
         command,
         api_base,
         policy: shared.policy,
-        output_was_explicit: shared.output_was_explicit(),
+        output_was_explicit,
     })
+}
+
+fn valid_api_base(value: &str) -> bool {
+    let rest = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"));
+    let Some(rest) = rest else { return false };
+    let authority = rest.split('/').next().unwrap_or("");
+    valid_authority(authority)
+        && !rest.contains('?')
+        && !rest.contains('#')
+        && !rest.contains('\\')
+        && !rest.chars().any(char::is_whitespace)
+}
+
+fn valid_authority(authority: &str) -> bool {
+    if authority.is_empty() || authority.contains('@') || authority.contains('%') {
+        return false;
+    }
+    if authority.starts_with('[') {
+        let Some((ip, suffix)) = authority.split_once(']') else {
+            return false;
+        };
+        let Some(ip) = ip.strip_prefix('[') else {
+            return false;
+        };
+        return ip.parse::<std::net::Ipv6Addr>().is_ok()
+            && (suffix.is_empty() || suffix.strip_prefix(':').is_some_and(valid_port));
+    }
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host, Some(port)),
+        Some(_) => return false,
+        None => (authority, None),
+    };
+    if port.is_some_and(|port| !valid_port(port)) {
+        return false;
+    }
+    let labels_valid = !host.is_empty()
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == b'-')
+        });
+    labels_valid
+        && (!host.bytes().all(|ch| ch.is_ascii_digit() || ch == b'.')
+            || host.parse::<std::net::Ipv4Addr>().is_ok())
+}
+
+fn valid_port(value: &str) -> bool {
+    value.parse::<u16>().is_ok_and(|port| port > 0)
 }
 
 pub fn help_text() -> &'static str {
@@ -93,7 +156,53 @@ mod tests {
     }
 
     #[test]
+    fn api_base_rejects_ambiguous_or_unsafe_values() {
+        for value in [
+            "",
+            "localhost:8080",
+            "https://",
+            "https://user:pass@example.test",
+            "https://example.test/?q=1",
+            "https://example.test/#anchor",
+            "https://example.test/with space",
+            "https://:8080",
+            "https://example.test:0",
+            "https://example.test:bad",
+            "https://example.test:",
+            "https://bad_name.example",
+            "https://999.999.999.999",
+            "https://[::1",
+        ] {
+            assert!(
+                parse(["health".to_owned(), format!("--api-base={value}")]).is_err(),
+                "{value}"
+            );
+        }
+        assert!(parse([
+            "status".to_owned(),
+            "--api-base=https://example.test".to_owned(),
+            "--api-base=http://localhost:8080".to_owned()
+        ])
+        .is_err());
+        assert!(parse([
+            "health".to_owned(),
+            "--api-base=http://localhost:8080".to_owned()
+        ])
+        .is_ok());
+        assert!(parse([
+            "health".to_owned(),
+            "--api-base=https://[::1]:8443/api".to_owned()
+        ])
+        .is_ok());
+    }
+
+    #[test]
     fn contradictory_shared_flags_fail_closed() {
-        assert!(parse(["status".to_owned(), "--json".to_owned(), "--no-json".to_owned()]).is_err());
+        assert!(parse([
+            "status".to_owned(),
+            "--json".to_owned(),
+            "--no-json".to_owned()
+        ])
+        .is_err());
     }
 }
