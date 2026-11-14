@@ -79,7 +79,7 @@ fn valid_api_base(value: &str) -> bool {
     let authority = rest.split('/').next().unwrap_or("");
     !authority.is_empty()
         && !authority.contains('@')
-        && !rest.contains(['?', '#', '\\'])
+        && !rest.contains('?') && !rest.contains('#') && !rest.contains('\\')
         && !rest.chars().any(char::is_whitespace)
 }
 
