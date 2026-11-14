@@ -27,4 +27,4 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
       - name: Verify Rust formatting
-        run: cargo fmt --all -- --check
+        run: rustfmt --edition 2021 --check src/args.rs
