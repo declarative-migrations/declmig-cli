@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use ores_clis_core::{CliPolicy, parse_shared_argv};
+use ores_clis_core::{parse_shared_argv, CliPolicy};
 
 use crate::error::CliError;
 
@@ -58,7 +58,10 @@ where
                 }
                 let value = flag.trim_start_matches("--api-base=");
                 if !valid_api_base(value) {
-                    return Err(CliError::Usage("--api-base must be an http(s) URL without credentials, query, or fragment".into()));
+                    return Err(CliError::Usage(
+                        "--api-base must be an http(s) URL without credentials, query, or fragment"
+                            .into(),
+                    ));
                 }
                 api_base = Some(value.to_string());
             }
@@ -74,13 +77,16 @@ where
 }
 
 fn valid_api_base(value: &str) -> bool {
-    let rest = value.strip_prefix("https://")
+    let rest = value
+        .strip_prefix("https://")
         .or_else(|| value.strip_prefix("http://"));
     let Some(rest) = rest else { return false };
     let authority = rest.split('/').next().unwrap_or("");
     !authority.is_empty()
         && !authority.contains('@')
-        && !rest.contains('?') && !rest.contains('#') && !rest.contains('\\')
+        && !rest.contains('?')
+        && !rest.contains('#')
+        && !rest.contains('\\')
         && !rest.chars().any(char::is_whitespace)
 }
 
@@ -125,6 +131,11 @@ mod tests {
 
     #[test]
     fn contradictory_shared_flags_fail_closed() {
-        assert!(parse(["status".to_owned(), "--json".to_owned(), "--no-json".to_owned()]).is_err());
+        assert!(parse([
+            "status".to_owned(),
+            "--json".to_owned(),
+            "--no-json".to_owned()
+        ])
+        .is_err());
     }
 }
