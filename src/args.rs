@@ -81,12 +81,50 @@ fn valid_api_base(value: &str) -> bool {
         .or_else(|| value.strip_prefix("http://"));
     let Some(rest) = rest else { return false };
     let authority = rest.split('/').next().unwrap_or("");
-    !authority.is_empty()
-        && !authority.contains('@')
+    valid_authority(authority)
         && !rest.contains('?')
         && !rest.contains('#')
         && !rest.contains('\\')
         && !rest.chars().any(char::is_whitespace)
+}
+
+
+fn valid_authority(authority: &str) -> bool {
+    if authority.is_empty() || authority.contains('@') || authority.contains('%') {
+        return false;
+    }
+    if authority.starts_with('[') {
+        let Some((ip, suffix)) = authority.split_once(']') else {
+            return false;
+        };
+        let Some(ip) = ip.strip_prefix('[') else {
+            return false;
+        };
+        return ip.parse::<std::net::Ipv6Addr>().is_ok()
+            && (suffix.is_empty() || suffix.strip_prefix(':').is_some_and(valid_port));
+    }
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host, Some(port)),
+        Some(_) => return false,
+        None => (authority, None),
+    };
+    if port.is_some_and(|port| !valid_port(port)) {
+        return false;
+    }
+    let labels_valid = !host.is_empty()
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label.bytes().all(|ch| ch.is_ascii_alphanumeric() || ch == b'-')
+        });
+    labels_valid
+        && (!host.bytes().all(|ch| ch.is_ascii_digit() || ch == b'.')
+            || host.parse::<std::net::Ipv4Addr>().is_ok())
+}
+
+fn valid_port(value: &str) -> bool {
+    value.parse::<u16>().is_ok_and(|port| port > 0)
 }
 
 pub fn help_text() -> &'static str {
@@ -126,6 +164,13 @@ mod tests {
             "https://example.test/?q=1",
             "https://example.test/#anchor",
             "https://example.test/with space",
+            "https://:8080",
+            "https://example.test:0",
+            "https://example.test:bad",
+            "https://example.test:",
+            "https://bad_name.example",
+            "https://999.999.999.999",
+            "https://[::1",
         ] {
             assert!(
                 parse(["health".to_owned(), format!("--api-base={value}")]).is_err(),
@@ -141,6 +186,11 @@ mod tests {
         assert!(parse([
             "health".to_owned(),
             "--api-base=http://localhost:8080".to_owned()
+        ])
+        .is_ok());
+        assert!(parse([
+            "health".to_owned(),
+            "--api-base=https://[::1]:8443/api".to_owned()
         ])
         .is_ok());
     }
