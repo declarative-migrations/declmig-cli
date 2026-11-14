@@ -88,7 +88,6 @@ fn valid_api_base(value: &str) -> bool {
         && !rest.chars().any(char::is_whitespace)
 }
 
-
 fn valid_authority(authority: &str) -> bool {
     if authority.is_empty() || authority.contains('@') || authority.contains('%') {
         return false;
@@ -116,7 +115,9 @@ fn valid_authority(authority: &str) -> bool {
             !label.is_empty()
                 && !label.starts_with('-')
                 && !label.ends_with('-')
-                && label.bytes().all(|ch| ch.is_ascii_alphanumeric() || ch == b'-')
+                && label
+                    .bytes()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == b'-')
         });
     labels_valid
         && (!host.bytes().all(|ch| ch.is_ascii_digit() || ch == b'.')
