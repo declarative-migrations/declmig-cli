@@ -27,6 +27,7 @@ where
         .map_err(|error| CliError::Usage(error.to_string()))?;
     let mut command = Command::Help;
     let mut api_base = None;
+    let output_was_explicit = shared.output_was_explicit();
     let mut items = shared.passthrough.into_iter().peekable();
     if let Some(first) = items.peek() {
         match first.as_str() {
@@ -68,7 +69,7 @@ where
         command,
         api_base,
         policy: shared.policy,
-        output_was_explicit: shared.output_was_explicit(),
+        output_was_explicit,
     })
 }
 
