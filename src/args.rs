@@ -23,8 +23,7 @@ pub fn parse<I>(args: I) -> Result<Invocation, CliError>
 where
     I: IntoIterator<Item = String>,
 {
-    let shared = parse_shared_argv(args)
-        .map_err(|error| CliError::Usage(error.to_string()))?;
+    let shared = parse_shared_argv(args).map_err(|error| CliError::Usage(error.to_string()))?;
     let mut command = Command::Help;
     let mut api_base = None;
     let output_was_explicit = shared.output_was_explicit();
