@@ -118,14 +118,31 @@ mod tests {
 
     #[test]
     fn api_base_rejects_ambiguous_or_unsafe_values() {
-        for value in ["", "localhost:8080", "https://", "https://user:pass@example.test",
-                      "https://example.test/?q=1", "https://example.test/#anchor",
-                      "https://example.test/with space"] {
-            assert!(parse(["health".to_owned(), format!("--api-base={value}")]).is_err(), "{value}");
+        for value in [
+            "",
+            "localhost:8080",
+            "https://",
+            "https://user:pass@example.test",
+            "https://example.test/?q=1",
+            "https://example.test/#anchor",
+            "https://example.test/with space",
+        ] {
+            assert!(
+                parse(["health".to_owned(), format!("--api-base={value}")]).is_err(),
+                "{value}"
+            );
         }
-        assert!(parse(["status".to_owned(), "--api-base=https://example.test".to_owned(),
-                       "--api-base=http://localhost:8080".to_owned()]).is_err());
-        assert!(parse(["health".to_owned(), "--api-base=http://localhost:8080".to_owned()]).is_ok());
+        assert!(parse([
+            "status".to_owned(),
+            "--api-base=https://example.test".to_owned(),
+            "--api-base=http://localhost:8080".to_owned()
+        ])
+        .is_err());
+        assert!(parse([
+            "health".to_owned(),
+            "--api-base=http://localhost:8080".to_owned()
+        ])
+        .is_ok());
     }
 
     #[test]
