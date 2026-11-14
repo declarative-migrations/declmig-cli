@@ -52,7 +52,14 @@ where
         match arg.as_str() {
             "--help" | "-h" => command = Command::Help,
             flag if flag.starts_with("--api-base=") => {
-                api_base = Some(flag.trim_start_matches("--api-base=").to_string());
+                if api_base.is_some() {
+                    return Err(CliError::Usage("--api-base may appear only once".into()));
+                }
+                let value = flag.trim_start_matches("--api-base=");
+                if !valid_api_base(value) {
+                    return Err(CliError::Usage("--api-base must be an http(s) URL without credentials, query, or fragment".into()));
+                }
+                api_base = Some(value.to_string());
             }
             other => return Err(CliError::Usage(format!("unknown flag {other}"))),
         }
@@ -63,6 +70,17 @@ where
         policy: shared.policy,
         output_was_explicit: shared.output_was_explicit(),
     })
+}
+
+fn valid_api_base(value: &str) -> bool {
+    let rest = value.strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"));
+    let Some(rest) = rest else { return false };
+    let authority = rest.split('/').next().unwrap_or("");
+    !authority.is_empty()
+        && !authority.contains('@')
+        && !rest.contains(['?', '#', '\\'])
+        && !rest.chars().any(char::is_whitespace)
 }
 
 pub fn help_text() -> &'static str {
@@ -90,6 +108,18 @@ mod tests {
         assert_eq!(invocation.policy.log_level, LogLevel::Trace);
         assert_eq!(invocation.policy.output, OutputMode::Json);
         assert!(invocation.output_was_explicit);
+    }
+
+    #[test]
+    fn api_base_rejects_ambiguous_or_unsafe_values() {
+        for value in ["", "localhost:8080", "https://", "https://user:pass@example.test",
+                      "https://example.test/?q=1", "https://example.test/#anchor",
+                      "https://example.test/with space"] {
+            assert!(parse(["health".to_owned(), format!("--api-base={value}")]).is_err(), "{value}");
+        }
+        assert!(parse(["status".to_owned(), "--api-base=https://example.test".to_owned(),
+                       "--api-base=http://localhost:8080".to_owned()]).is_err());
+        assert!(parse(["health".to_owned(), "--api-base=http://localhost:8080".to_owned()]).is_ok());
     }
 
     #[test]
